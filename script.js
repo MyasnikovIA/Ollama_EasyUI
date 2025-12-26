@@ -3,6 +3,7 @@ const DEFAULT_CONFIG = {
     url: 'http://192.168.15.7:11434/',
     apiMode: 'chat',
     model: 'llama2',
+    embeddingModel: 'nomic-embed-text', // Добавлено
     temperature: 0.7,
     contextLength: 2048
 };
@@ -108,6 +109,13 @@ function initElements() {
         value: 'llama2'
     });
 
+    // Инициализация комбобокса embedding моделей
+    $('#embedding-model').combobox({
+        valueField: 'name',
+        textField: 'name',
+        value: 'nomic-embed-text'
+    });
+
     // Инициализация вкладок промптов
     $('.easyui-tabs').tabs();
 
@@ -185,21 +193,81 @@ async function loadModels() {
         }
 
         const data = await response.json();
-        const models = data.models || [];
+        const allModels = data.models || [];
 
-        // Обновляем данные в комбобоксе
-        $('#model').combobox('loadData', models);
+        if (allModels.length === 0) {
+            console.warn('Нет доступных моделей');
+            updateStatus(true);
+            return false;
+        }
 
-        // Устанавливаем сохраненную модель
+        // Логируем все модели для отладки
+        console.log('Все модели:', allModels.map(m => m.name));
+
+        // Фильтруем модели для embedding (содержат "embed" в названии)
+        const embeddingModels = allModels.filter(model =>
+            model.name.toLowerCase().includes('embed') ||
+            model.name.toLowerCase().includes('bge') || // Chinese embedding models
+            model.name.toLowerCase().includes('instruct') || // Некоторые embedding модели
+            model.name.toLowerCase().includes('nomic') // nomic-embed-text
+        );
+
+        // Модели для ответов (chat/generate) - ВСЕ остальные модели
+        const chatModels = allModels.filter(model =>
+            !embeddingModels.includes(model)
+        );
+
+        console.log('Embedding модели:', embeddingModels.map(m => m.name));
+        console.log('Chat модели:', chatModels.map(m => m.name));
+
+        // Обновляем данные в комбобоксах
+        $('#model').combobox('loadData', allModels); // Все модели для ответов
+        $('#embedding-model').combobox('loadData', embeddingModels.length > 0 ? embeddingModels : allModels);
+
+        // Устанавливаем сохраненную модель для ответов
         const savedModel = localStorage.getItem('ollamaModel');
         if (savedModel) {
-            const modelExists = models.some(m => m.name === savedModel);
+            const modelExists = allModels.some(m => m.name === savedModel);
             if (modelExists) {
                 $('#model').combobox('setValue', savedModel);
-                console.log('Установлена сохраненная модель:', savedModel);
-            } else if (models.length > 0) {
-                $('#model').combobox('setValue', models[0].name);
+                console.log('Установлена сохраненная chat модель:', savedModel);
+            } else if (allModels.length > 0) {
+                $('#model').combobox('setValue', allModels[0].name);
             }
+        } else if (allModels.length > 0) {
+            $('#model').combobox('setValue', allModels[0].name);
+        }
+
+        // Устанавливаем сохраненную модель для embedding
+        const savedEmbeddingModel = localStorage.getItem('ollamaEmbeddingModel');
+        if (savedEmbeddingModel) {
+            const embeddingModelExists = embeddingModels.some(m => m.name === savedEmbeddingModel) ||
+                                       (embeddingModels.length === 0 && allModels.some(m => m.name === savedEmbeddingModel));
+            if (embeddingModelExists) {
+                $('#embedding-model').combobox('setValue', savedEmbeddingModel);
+                console.log('Установлена сохраненная embedding модель:', savedEmbeddingModel);
+            } else if (embeddingModels.length > 0) {
+                // Ищем первую embedding модель
+                const firstEmbeddingModel = embeddingModels[0].name;
+                $('#embedding-model').combobox('setValue', firstEmbeddingModel);
+                console.log('Установлена первая embedding модель:', firstEmbeddingModel);
+            } else if (allModels.length > 0) {
+                // Fallback: используем первую модель если нет embedding моделей
+                $('#embedding-model').combobox('setValue', allModels[0].name);
+                console.log('Установлена первая модель как embedding (fallback):', allModels[0].name);
+            }
+        } else if (embeddingModels.length > 0) {
+            // Устанавливаем первую embedding модель по умолчанию
+            const defaultEmbeddingModel = embeddingModels.find(m =>
+                m.name.toLowerCase().includes('nomic-embed-text')
+            )?.name || embeddingModels[0].name;
+
+            $('#embedding-model').combobox('setValue', defaultEmbeddingModel);
+            console.log('Установлена embedding модель по умолчанию:', defaultEmbeddingModel);
+        } else if (allModels.length > 0) {
+            // Fallback: если нет embedding моделей, используем первую модель
+            $('#embedding-model').combobox('setValue', allModels[0].name);
+            console.log('Установлена первая модель как embedding (no embedding models found):', allModels[0].name);
         }
 
         updateStatus(true);
@@ -227,7 +295,8 @@ function saveSettings() {
             url: $('#ollama-url').textbox('getValue'),
             apiMode: $('#api-mode').combobox('getValue'),
             model: $('#model').combobox('getValue'),
-            temperature: $('#temperature').numberspinner('getValue'), // ИЗМЕНЕНО: numberspinner вместо slider
+            embeddingModel: $('#embedding-model').combobox('getValue'), // Добавлено
+            temperature: $('#temperature').numberspinner('getValue'),
             contextLength: $('#context-length').numberspinner('getValue')
         };
 
@@ -235,6 +304,7 @@ function saveSettings() {
 
         localStorage.setItem('ollamaSettings', JSON.stringify(settings));
         localStorage.setItem('ollamaModel', settings.model);
+        localStorage.setItem('ollamaEmbeddingModel', settings.embeddingModel); // Добавлено
 
         $('#settings-dialog').dialog('close');
 
@@ -284,18 +354,21 @@ function loadSettings() {
             // Устанавливаем значения
             $('#ollama-url').textbox('setValue', settings.url || DEFAULT_CONFIG.url);
             $('#api-mode').combobox('setValue', settings.apiMode || DEFAULT_CONFIG.apiMode);
-            $('#temperature').numberspinner('setValue', settings.temperature || DEFAULT_CONFIG.temperature); // ИЗМЕНЕНО: numberspinner вместо slider
+            $('#temperature').numberspinner('setValue', settings.temperature || DEFAULT_CONFIG.temperature);
             $('#context-length').numberspinner('setValue', settings.contextLength || DEFAULT_CONFIG.contextLength);
 
             // Обновляем отображение температуры
             updateTemperatureDisplay();
 
-            // Сохраняем модель для последующей установки
+            // Сохраняем модели для последующей установки
             if (settings.model) {
                 localStorage.setItem('ollamaModel', settings.model);
             }
+            if (settings.embeddingModel) { // Добавлено
+                localStorage.setItem('ollamaEmbeddingModel', settings.embeddingModel);
+            }
 
-            // Загружаем модели с задержкой, чтобы комбобокс успел инициализироваться
+            // Загружаем модели с задержкой, чтобы комбобоксы успели инициализироваться
             setTimeout(() => {
                 loadModels();
             }, 500);
@@ -304,7 +377,7 @@ function loadSettings() {
             // Используем настройки по умолчанию
             $('#ollama-url').textbox('setValue', DEFAULT_CONFIG.url);
             $('#api-mode').combobox('setValue', DEFAULT_CONFIG.apiMode);
-            $('#temperature').numberspinner('setValue', DEFAULT_CONFIG.temperature); // ИЗМЕНЕНО: numberspinner вместо slider
+            $('#temperature').numberspinner('setValue', DEFAULT_CONFIG.temperature);
             $('#context-length').numberspinner('setValue', DEFAULT_CONFIG.contextLength);
             updateTemperatureDisplay();
 
@@ -318,7 +391,7 @@ function loadSettings() {
         // Используем настройки по умолчанию при ошибке
         $('#ollama-url').textbox('setValue', DEFAULT_CONFIG.url);
         $('#api-mode').combobox('setValue', DEFAULT_CONFIG.apiMode);
-        $('#temperature').numberspinner('setValue', DEFAULT_CONFIG.temperature); // ИЗМЕНЕНО: numberspinner вместо slider
+        $('#temperature').numberspinner('setValue', DEFAULT_CONFIG.temperature);
         $('#context-length').numberspinner('setValue', DEFAULT_CONFIG.contextLength);
         updateTemperatureDisplay();
 
