@@ -10,6 +10,8 @@ const DEFAULT_CONFIG = {
 // Текущий чат
 let currentChat = [];
 let isStreaming = false;
+// Контекстное меню для истории чатов
+let selectedChatId = null;
 
 // Инициализация при загрузке
 $(document).ready(function() {
@@ -37,8 +39,28 @@ $(document).ready(function() {
     });
 });
 
-// Инициализация элементов EasyUI
+
+// Обновить функцию initElements:
 function initElements() {
+    // Инициализация MenuButton в header
+    $('.easyui-menubutton').menubutton({
+        plain: false,
+        iconCls: 'icon-more',
+        hasDownArrow: true
+    });
+
+    // Инициализация основного split layout чата
+    $('#main-chat-split').layout({
+        onResize: function() {
+            saveChatSplitSize();
+        }
+    });
+
+    // Восстанавливаем размер split панели чата
+    setTimeout(() => {
+        restoreChatSplitSize();
+    }, 200);
+
     // Инициализация текстовых полей
     $('#ollama-url').textbox();
     $('#message-input').textbox({
@@ -90,15 +112,17 @@ function initElements() {
     // Инициализация вкладок промптов
     $('.easyui-tabs').tabs();
 
-    // Инициализация меню
-    $('.easyui-menubutton').menubutton();
-
-    // Инициализация split панели
+    // Инициализация главного split панели
     $('#main-split').layout({
         onResize: function() {
             saveSplitSize();
         }
     });
+
+    // Восстанавливаем размер главной split панели
+    setTimeout(() => {
+        restoreSplitSize();
+    }, 100);
 }
 
 // Обновление отображения температуры
@@ -602,6 +626,33 @@ function clearChat() {
         }
     });
 }
+// Сохранение размера split панели чата
+function saveChatSplitSize() {
+    try {
+        const southPanel = $('#main-chat-split').layout('panel', 'south');
+        const height = southPanel.panel('options').height;
+        localStorage.setItem('ollamaChatSplitHeight', height);
+    } catch (error) {
+        console.error('Ошибка сохранения размера split чата:', error);
+    }
+}
+
+// Восстановление размера split панели чата
+function restoreChatSplitSize() {
+    try {
+        const savedHeight = localStorage.getItem('ollamaChatSplitHeight');
+        if (savedHeight) {
+            setTimeout(() => {
+                $('#main-chat-split').layout('panel', 'south').panel('resize', {
+                    height: parseInt(savedHeight)
+                });
+            }, 100);
+        }
+    } catch (error) {
+        console.error('Ошибка восстановления размера split чата:', error);
+    }
+}
+
 
 // Сохранение текущего чата
 function saveCurrentChat() {
@@ -622,12 +673,14 @@ function saveCurrentChat() {
     }
 }
 
-// Загрузка чата из истории
+
+// Обновите функцию loadChat для установки selectedChatId
 function loadChat(chatIndex) {
     try {
         const history = JSON.parse(localStorage.getItem('ollamaChatHistory') || '[]');
         if (history[chatIndex]) {
             currentChat = history[chatIndex].messages;
+            selectedChatId = chatIndex;
             $('#chat-messages').empty();
 
             currentChat.forEach(msg => {
@@ -638,8 +691,99 @@ function loadChat(chatIndex) {
         console.error('Ошибка загрузки чата:', error);
     }
 }
+// Инициализация контекстного меню
+function initContextMenu() {
+    $('#history-context-menu').menu({
+        onClick: function(item) {
+            // Обработка кликов происходит через onclick в HTML
+        }
+    });
+}
 
-// Загрузка истории чатов
+// Удаление выбранного чата
+function deleteChat() {
+    if (selectedChatId === null) {
+        $.messager.alert('Ошибка', 'Чат не выбран', 'error');
+        return;
+    }
+
+    $.messager.confirm('Подтверждение', 'Удалить выбранный чат?', function(r) {
+        if (r) {
+            try {
+                const history = JSON.parse(localStorage.getItem('ollamaChatHistory') || '[]');
+
+                // Удаляем выбранный чат
+                history.splice(selectedChatId, 1);
+
+                // Сохраняем обновленную историю
+                localStorage.setItem('ollamaChatHistory', JSON.stringify(history));
+
+                // Если удаляем текущий чат, очищаем область чата
+                if (currentChat.length > 0) {
+                    // Проверяем, не является ли текущий чат удаляемым
+                    const currentChatTitle = currentChat[0]?.content?.substring(0, 50) + '...' || 'Новый чат';
+                    const deletedChatTitle = history[selectedChatId]?.title || '';
+
+                    if (currentChatTitle.includes(deletedChatTitle) || deletedChatTitle.includes(currentChatTitle)) {
+                        currentChat = [];
+                        $('#chat-messages').empty();
+                        localStorage.removeItem('ollamaCurrentChat');
+                    }
+                }
+
+                // Обновляем дерево истории
+                loadChatHistory();
+
+                $.messager.show({
+                    title: 'Успешно',
+                    msg: 'Чат удален',
+                    timeout: 2000,
+                    showType: 'slide'
+                });
+
+                selectedChatId = null;
+            } catch (error) {
+                console.error('Ошибка удаления чата:', error);
+                $.messager.alert('Ошибка', 'Не удалось удалить чат', 'error');
+            }
+        }
+    });
+}
+
+// Очистка всей истории чатов
+function clearAllHistory() {
+    $.messager.confirm('Подтверждение', 'Очистить всю историю чатов?', function(r) {
+        if (r) {
+            try {
+                // Очищаем историю
+                localStorage.removeItem('ollamaChatHistory');
+
+                // Очищаем текущий чат
+                currentChat = [];
+                $('#chat-messages').empty();
+                localStorage.removeItem('ollamaCurrentChat');
+
+                // Обновляем дерево истории
+                loadChatHistory();
+
+                $.messager.show({
+                    title: 'Успешно',
+                    msg: 'История чатов очищена',
+                    timeout: 2000,
+                    showType: 'slide'
+                });
+
+                selectedChatId = null;
+            } catch (error) {
+                console.error('Ошибка очистки истории:', error);
+                $.messager.alert('Ошибка', 'Не удалось очистить историю', 'error');
+            }
+        }
+    });
+}
+
+
+// Инициализация контекстного меню при загрузке истории
 function loadChatHistory() {
     try {
         const history = JSON.parse(localStorage.getItem('ollamaChatHistory') || '[]');
@@ -651,8 +795,19 @@ function loadChatHistory() {
             })),
             onClick: function(node) {
                 loadChat(node.id);
+            },
+            onContextMenu: function(e, node) {
+                e.preventDefault();
+                selectedChatId = node.id;
+                $('#history-context-menu').menu('show', {
+                    left: e.pageX,
+                    top: e.pageY
+                });
             }
         });
+
+        // Инициализация контекстного меню
+        initContextMenu();
     } catch (error) {
         console.error('Ошибка загрузки истории:', error);
     }

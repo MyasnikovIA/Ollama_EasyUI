@@ -36,12 +36,6 @@ body {
     color: #333;
 }
 
-.menu {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
 #status-bar {
     display: flex;
     align-items: center;
@@ -51,8 +45,8 @@ body {
 }
 
 .response-area {
-    height: 70% !important;
-    min-height: 300px;
+    /* Убрали фиксированную высоту, теперь она определяется split панелью */
+    min-height: 200px;
     overflow-y: auto;
     white-space: pre-wrap;
     word-wrap: break-word;
@@ -60,12 +54,13 @@ body {
     border: 1px solid #ddd;
     background: #fff;
     border-radius: 4px;
-    margin-bottom: 10px;
+    margin-bottom: 0;
+    height: 100%; /* Занимает всю доступную высоту */
 }
 
 .chat-input-container {
-    height: 30%;
-    min-height: 150px;
+    /* Убрали фиксированную высоту, теперь она определяется split панелью */
+    height: 100%;
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -185,4 +180,8 @@ body {
 
 .easyui-tabs .tabs li a {
     padding: 8px 15px !important;
+}
+/* Обновляем высоту основного layout */
+#main-split.easyui-layout {
+    height: calc(100vh - 60px) !important; /* 60px - высота header */
 }
