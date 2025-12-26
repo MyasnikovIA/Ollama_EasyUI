@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ollama Web Client</title>
+
+    <!-- EasyUI Styles -->
+    <link rel="stylesheet" type="text/css" href="https://www.jeasyui.com/easyui/themes/default/easyui.css">
+    <link rel="stylesheet" type="text/css" href="https://www.jeasyui.com/easyui/themes/icon.css">
+    <link rel="stylesheet" type="text/css" href="https://www.jeasyui.com/easyui/themes/color.css">
+
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            margin-bottom: 20px;
+        }
+
+        .chat-container {
+            display: flex;
+            gap: 20px;
+            height: 600px;
+        }
+
+        .chat-history-panel {
+            flex: 1;
+            min-width: 300px;
+        }
+
+        .chat-main-panel {
+            flex: 2;
+            min-width: 500px;
+        }
+
+        .response-area {
+            height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            padding: 10px;
+            border: 1px solid #ddd;
+            background: #fff;
+            margin-top: 10px;
+        }
+
+        .message-user {
+            background: #e3f2fd;
+            padding: 8px;
+            margin: 5px 0;
+            border-radius: 5px;
+            border-left: 4px solid #2196f3;
+        }
+
+        .message-ai {
+            background: #f1f8e9;
+            padding: 8px;
+            margin: 5px 0;
+            border-radius: 5px;
+            border-left: 4px solid #4caf50;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+
+        .status-connected {
+            background-color: #4caf50;
+        }
+
+        .status-disconnected {
+            background-color: #f44336;
+        }
+
+        .typing-indicator {
+            color: #666;
+            font-style: italic;
+            padding: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>Ollama Web Client</h1>
+            <div id="status-bar">
+                <span class="status-indicator status-disconnected"></span>
+                <span>Не подключено</span>
+            </div>
+        </div>
+
+        <!-- Main Layout -->
+        <div class="chat-container">
+            <!-- Left Panel: Settings and History -->
+            <div class="chat-history-panel">
+                <div class="easyui-panel" title="Настройки" style="width:100%;height:300px;padding:10px">
+                    <div style="margin-bottom:20px">
+                        <label>Ollama URL:</label>
+                        <input id="ollama-url" class="easyui-textbox" style="width:100%" value="http://192.168.15.7:11434/">
+                    </div>
+
+                    <div style="margin-bottom:20px">
+                        <label>Модель:</label>
+                        <input id="model" class="easyui-combobox" style="width:100%"
+                            data-options="
+                                valueField:'name',
+                                textField:'name',
+                                value:'llama2',
+                                onSelect:saveSettings,
+                                onLoadSuccess:function() {
+                                    var savedModel = localStorage.getItem('ollamaModel');
+                                    if (savedModel) {
+                                        $(this).combobox('setValue', savedModel);
+                                    }
+                                }">
+                    </div>
+
+                    <div style="margin-bottom:20px">
+                        <label>Температура:</label>
+                        <input id="temperature" class="easyui-slider" style="width:100%"
+                            data-options="
+                                min:0,
+                                max:2,
+                                step:0.1,
+                                value:0.7,
+                                rule:[0,'|',0.5,'|',1,'|',1.5,'|',2],
+                                onChange:saveSettings">
+                    </div>
+
+                    <div style="margin-bottom:20px">
+                        <label>Context Length:</label>
+                        <input id="context-length" class="easyui-numberspinner" style="width:100%"
+                            data-options="
+                                min:512,
+                                max:4096,
+                                value:2048,
+                                increment:256,
+                                onChange:saveSettings">
+                    </div>
+
+                    <div style="text-align:center;margin-top:20px">
+                        <a href="javascript:void(0)" class="easyui-linkbutton" onclick="saveSettings()"
+                           data-options="iconCls:'icon-save'">Сохранить настройки</a>
+                        <a href="javascript:void(0)" class="easyui-linkbutton" onclick="loadSettings()"
+                           data-options="iconCls:'icon-reload'">Загрузить</a>
+                    </div>
+                </div>
+
+                <div class="easyui-panel" title="История чатов" style="width:100%;height:280px;margin-top:20px">
+                    <ul id="chat-history" class="easyui-tree" style="height:100%"></ul>
+                </div>
+            </div>
+
+            <!-- Right Panel: Chat Interface -->
+            <div class="chat-main-panel">
+                <div class="easyui-panel" title="Чат" style="width:100%;height:100%;padding:10px">
+                    <div id="chat-messages" class="response-area">
+                        <!-- Сообщения будут добавляться здесь -->
+                    </div>
+
+                    <div style="margin-top:20px">
+                        <textarea id="message-input" class="easyui-textbox"
+                            data-options="multiline:true,prompt:'Введите сообщение...'"
+                            style="width:100%;height:80px"></textarea>
+                    </div>
+
+                    <div style="margin-top:10px;text-align:right">
+                        <a href="javascript:void(0)" class="easyui-linkbutton" onclick="sendMessage()"
+                           data-options="iconCls:'icon-send',size:'large'">Отправить</a>
+                        <a href="javascript:void(0)" class="easyui-linkbutton" onclick="clearChat()"
+                           data-options="iconCls:'icon-clear'">Очистить</a>
+                        <a href="javascript:void(0)" class="easyui-linkbutton" onclick="testConnection()"
+                           data-options="iconCls:'icon-connect'">Тест подключения</a>
+                    </div>
+
+                    <div id="typing-indicator" class="typing-indicator" style="display:none">
+                        AI печатает...
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script type="text/javascript" src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script type="text/javascript" src="https://www.jeasyui.com/easyui/jquery.easyui.min.js"></script>
+
+        <script>
+        // Конфигурация по умолчанию
+        const DEFAULT_CONFIG = {
+            url: 'http://192.168.15.7:11434/',
+            model: 'llama2',
+            temperature: 0.7,
+            contextLength: 2048
+        };
+
+        // Текущий чат
+        let currentChat = [];
+        let isStreaming = false;
+
+        // Инициализация при загрузке
+        $(document).ready(function() {
+            loadSettings();
+            loadModels();
+            loadChatHistory();
+            testConnection(); // Проверка подключения при загрузке
+
+            // Автосохранение при изменении настроек
+            $('#ollama-url').textbox({
+                onChange: function() {
+                    saveSettings();
+                    testConnection(); // Проверка при изменении URL
+                }
+            });
+
+            // Обработка нажатия Enter для отправки сообщения
+            $('#message-input').textbox('textbox').keydown(function(e) {
+                if (e.ctrlKey && e.keyCode === 13) {
+                    sendMessage();
+                }
+            });
+        });
+
+        // Загрузка доступных моделей
+        async function loadModels() {
+            try {
+                const baseUrl = normalizeUrl($('#ollama-url').textbox('getValue'));
+                const url = baseUrl + 'api/tags';
+                console.log('Запрос моделей по URL:', url);
+
+                const response = await fetch(url);
+                console.log('Ответ от сервера:', response.status, response.statusText);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status} ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                console.log('Получены данные моделей:', data);
+                const models = data.models || [];
+
+                if (models.length === 0) {
+                    console.warn('Список моделей пуст');
+                }
+
+                $('#model').combobox({
+                    data: models,
+                    onLoadSuccess: function() {
+                        const savedModel = localStorage.getItem('ollamaModel');
+                        if (savedModel && models.some(m => m.name === savedModel)) {
+                            $(this).combobox('setValue', savedModel);
+                        } else if (models.length > 0) {
+                            $(this).combobox('setValue', models[0].name);
+                        }
+                    }
+                });
+
+                updateStatus(true);
+                return true;
+            } catch (error) {
+                console.error('Ошибка загрузки моделей:', error);
+                updateStatus(false);
+                $.messager.alert('Ошибка', `Не удалось загрузить список моделей: ${error.message}`, 'error');
+                return false;
+            }
+        }
+
+        // Нормализация URL (добавление / в конце если нужно)
+        function normalizeUrl(url) {
+            if (!url.endsWith('/')) {
+                url += '/';
+            }
+            return url;
+        }
+
+        // Сохранение настроек в LocalStorage
+        function saveSettings() {
+            const settings = {
+                url: $('#ollama-url').textbox('getValue'),
+                model: $('#model').combobox('getValue'),
+                temperature: $('#temperature').slider('getValue'),
+                contextLength: $('#context-length').numberspinner('getValue')
+            };
+
+            localStorage.setItem('ollamaSettings', JSON.stringify(settings));
+            localStorage.setItem('ollamaModel', settings.model);
+
+            $.messager.show({
+                title: 'Сохранено',
+                msg: 'Настройки сохранены',
+                timeout: 2000,
+                showType: 'slide'
+            });
+        }
+
+        // Загрузка настроек из LocalStorage
+        function loadSettings() {
+            try {
+                const saved = localStorage.getItem('ollamaSettings');
+                if (saved) {
+                    const settings = JSON.parse(saved);
+                    $('#ollama-url').textbox('setValue', settings.url || DEFAULT_CONFIG.url);
+                    $('#model').combobox('setValue', settings.model || DEFAULT_CONFIG.model);
+                    $('#temperature').slider('setValue', settings.temperature || DEFAULT_CONFIG.temperature);
+                    $('#context-length').numberspinner('setValue', settings.contextLength || DEFAULT_CONFIG.contextLength);
+                }
+            } catch (error) {
+                console.error('Ошибка загрузки настроек:', error);
+            }
+        }
+
+        // Загрузка истории чатов
+        function loadChatHistory() {
+            try {
+                const history = JSON.parse(localStorage.getItem('ollamaChatHistory') || '[]');
+                $('#chat-history').tree({
+                    data: history.map((chat, index) => ({
+                        id: index,
+                        text: chat.title || `Чат ${index + 1}`,
+                        iconCls: 'icon-chat'
+                    })),
+                    onClick: function(node) {
+                        loadChat(node.id);
+                    }
+                });
+            } catch (error) {
+                console.error('Ошибка загрузки истории:', error);
+            }
+        }
+
+        // Отправка сообщения
+        async function sendMessage() {
+            if (isStreaming) {
+                $.messager.alert('Внимание', 'Дождитесь завершения текущего ответа', 'warning');
+                return;
+            }
+
+            const message = $('#message-input').textbox('getValue').trim();
+            if (!message) return;
+
+            // Добавление сообщения пользователя
+            addMessageToChat('user', message);
+            $('#message-input').textbox('clear');
+
+            // Получение текущих настроек
+            const baseUrl = normalizeUrl($('#ollama-url').textbox('getValue'));
+            const model = $('#model').combobox('getValue');
+            const temperature = $('#temperature').slider('getValue');
+            const contextLength = $('#context-length').numberspinner('getValue');
+
+            if (!model) {
+                $.messager.alert('Ошибка', 'Не выбрана модель. Загрузите список моделей.', 'error');
+                return;
+            }
+
+            // Подготовка данных запроса
+            const requestData = {
+                model: model,
+                messages: [...currentChat, { role: 'user', content: message }],
+                stream: true,
+                options: {
+                    temperature: parseFloat(temperature),
+                    num_ctx: parseInt(contextLength)
+                }
+            };
+
+            console.log('Отправка запроса на:', baseUrl + 'api/chat');
+            console.log('Данные запроса:', JSON.stringify(requestData, null, 2));
+
+            isStreaming = true;
+            $('#typing-indicator').show();
+
+            try {
+                // Отправка запроса с streaming
+                const response = await fetch(baseUrl + 'api/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify(requestData)
+                });
+
+                console.log('Ответ от сервера:', response.status, response.statusText);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status} ${response.statusText}`);
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder('utf-8');
+                let buffer = '';
+                let aiResponse = '';
+
+                // Создание элемента для ответа AI
+                const aiMessageElement = addMessageToChat('ai', '');
+                const aiMessageId = 'ai-message-' + Date.now();
+                $(aiMessageElement).attr('id', aiMessageId);
+
+                // Чтение stream
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+
+                    // Обработка строк из буфера
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop(); // Возвращаем неполную строку обратно в буфер
+
+                    for (const line of lines) {
+                        if (line.trim() === '') continue;
+
+                        try {
+                            // Убираем префикс "data: " если есть
+                            const dataLine = line.startsWith('data: ') ? line.substring(6) : line;
+
+                            if (dataLine.trim() === '') continue;
+
+                            const data = JSON.parse(dataLine);
+                            console.log('Получен фрагмент:', data);
+
+                            // Извлекаем контент из различных форматов ответа
+                            let contentChunk = '';
+
+                            if (data.message && data.message.content !== undefined) {
+                                contentChunk = data.message.content;
+                            } else if (data.response !== undefined) {
+                                contentChunk = data.response;
+                            } else if (data.content !== undefined) {
+                                contentChunk = data.content;
+                            } else if (data.chunk !== undefined) {
+                                contentChunk = data.chunk;
+                            }
+
+                            if (contentChunk) {
+                                aiResponse += contentChunk;
+
+                                // Обновление отображаемого текста с анимацией
+                                const aiMessageDiv = $('#' + aiMessageId);
+                                if (aiMessageDiv.length) {
+                                    aiMessageDiv.text(aiResponse);
+
+                                    // Плавная прокрутка к последнему сообщению
+                                    const chatMessages = $('#chat-messages')[0];
+                                    if (chatMessages) {
+                                        chatMessages.scrollTop = chatMessages.scrollHeight;
+                                    }
+                                }
+                            }
+
+                            // Проверка завершения
+                            if (data.done === true) {
+                                console.log('Генерация завершена');
+
+                                // Сохранение полного ответа в историю
+                                currentChat.push(
+                                    { role: 'user', content: message },
+                                    { role: 'assistant', content: aiResponse }
+                                );
+                                saveCurrentChat();
+
+                                // Обновляем статус typing indicator
+                                $('#typing-indicator').hide();
+                            }
+
+                        } catch (parseError) {
+                            console.warn('Ошибка парсинга строки:', parseError, 'Строка:', line);
+                        }
+                    }
+                }
+
+                console.log('Ответ успешно получен, длина:', aiResponse.length);
+
+                // Проверяем, есть ли ответ
+                if (aiResponse.trim() === '') {
+                    console.warn('Получен пустой ответ от модели');
+                    $(aiMessageElement).text('Нет ответа от модели. Возможно модель не поддерживает чат формат.');
+                }
+
+            } catch (error) {
+                console.error('Ошибка при отправке сообщения:', error);
+                $.messager.alert('Ошибка', `Не удалось отправить сообщение: ${error.message}`, 'error');
+
+                // Добавляем сообщение об ошибке
+                const errorElement = addMessageToChat('ai', `Ошибка: ${error.message}`);
+                $(errorElement).css('background', '#ffebee').css('border-left-color', '#f44336');
+
+                // Пробуем альтернативный метод если основная ошибка 404
+                if (error.message.includes('404')) {
+                    console.log('Пробуем альтернативный метод через /api/generate');
+                    tryAlternativeMethod(baseUrl, requestData, message);
+                }
+
+            } finally {
+                isStreaming = false;
+                $('#typing-indicator').hide();
+
+                // Прокручиваем к последнему сообщению
+                setTimeout(() => {
+                    const chatMessages = $('#chat-messages')[0];
+                    if (chatMessages) {
+                        chatMessages.scrollTop = chatMessages.scrollHeight;
+                    }
+                }, 100);
+            }
+        }
+
+        // Альтернативный метод - использование эндпоинта /api/generate
+        async function tryAlternativeMethod(baseUrl, requestData, userMessage) {
+            console.log('Пробуем альтернативный метод через /api/generate');
+
+            try {
+                // Создаем промпт из истории
+                let prompt = '';
+                requestData.messages.forEach(msg => {
+                    if (msg.role === 'user') {
+                        prompt += `User: ${msg.content}\n`;
+                    } else if (msg.role === 'assistant') {
+                        prompt += `Assistant: ${msg.content}\n`;
+                    }
+                });
+
+                const generateData = {
+                    model: requestData.model,
+                    prompt: prompt,
+                    stream: true,
+                    options: requestData.options
+                };
+
+                console.log('Альтернативный запрос на:', baseUrl + 'api/generate');
+
+                const response = await fetch(baseUrl + 'api/generate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify(generateData)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Альтернативный метод тоже не сработал: ${response.status}`);
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder('utf-8');
+                let buffer = '';
+                let aiResponse = '';
+
+                // Создание элемента для ответа AI
+                const aiMessageElement = addMessageToChat('ai', '');
+                const aiMessageId = 'ai-alt-message-' + Date.now();
+                $(aiMessageElement).attr('id', aiMessageId);
+                $(aiMessageElement).css('background', '#fff3e0').css('border-left-color', '#ff9800');
+
+                // Чтение stream
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+
+                    // Обработка строк из буфера
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop();
+
+                    for (const line of lines) {
+                        if (line.trim() === '') continue;
+
+                        try {
+                            const dataLine = line.startsWith('data: ') ? line.substring(6) : line;
+                            if (dataLine.trim() === '') continue;
+
+                            const data = JSON.parse(dataLine);
+
+                            if (data.response !== undefined) {
+                                aiResponse += data.response;
+
+                                // Обновление отображаемого текста
+                                const aiMessageDiv = $('#' + aiMessageId);
+                                if (aiMessageDiv.length) {
+                                    aiMessageDiv.text(aiResponse);
+
+                                    // Прокрутка к последнему сообщению
+                                    const chatMessages = $('#chat-messages')[0];
+                                    if (chatMessages) {
+                                        chatMessages.scrollTop = chatMessages.scrollHeight;
+                                    }
+                                }
+                            }
+
+                            if (data.done === true) {
+                                // Сохранение полного ответа в истории
+                                currentChat.push(
+                                    { role: 'user', content: userMessage },
+                                    { role: 'assistant', content: aiResponse }
+                                );
+                                saveCurrentChat();
+
+                                $.messager.show({
+                                    title: 'Информация',
+                                    msg: 'Использован альтернативный метод генерации',
+                                    timeout: 3000
+                                });
+                            }
+                        } catch (e) {
+                            console.warn('Ошибка парсинга chunk в альтернативном методе:', e);
+                        }
+                    }
+                }
+            } catch (altError) {
+                console.error('Альтернативный метод тоже не сработал:', altError);
+                addMessageToChat('ai', 'Ошибка: Не удалось получить ответ от AI сервера.');
+            }
+        }
+
+        // Добавление сообщения в чат
+        function addMessageToChat(role, content) {
+            const chatDiv = $('#chat-messages');
+            const messageDiv = $('<div></div>')
+                .addClass(role === 'user' ? 'message-user' : 'message-ai')
+                .text(content);
+
+            chatDiv.append(messageDiv);
+
+            // Добавляем атрибут для идентификации
+            const messageId = role + '-message-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+            messageDiv.attr('id', messageId);
+
+            // Прокручиваем к новому сообщению
+            chatDiv.scrollTop(chatDiv[0].scrollHeight);
+
+            return messageDiv[0];
+        }
+        // Очистка текущего чата
+        function clearChat() {
+            $.messager.confirm('Подтверждение', 'Очистить текущий чат?', function(r) {
+                if (r) {
+                    currentChat = [];
+                    $('#chat-messages').empty();
+                    localStorage.removeItem('ollamaCurrentChat');
+                }
+            });
+        }
+
+        // Сохранение текущего чата
+        function saveCurrentChat() {
+            if (currentChat.length > 0) {
+                localStorage.setItem('ollamaCurrentChat', JSON.stringify(currentChat));
+
+                // Сохранение в историю
+                const history = JSON.parse(localStorage.getItem('ollamaChatHistory') || '[]');
+                const chatTitle = currentChat[0]?.content?.substring(0, 50) + '...' || 'Новый чат';
+
+                history.unshift({
+                    title: chatTitle,
+                    messages: currentChat,
+                    timestamp: new Date().toISOString()
+                });
+
+                // Сохранение только последних 20 чатов
+                localStorage.setItem('ollamaChatHistory', JSON.stringify(history.slice(0, 20)));
+                loadChatHistory();
+            }
+        }
+
+        // Загрузка чата из истории
+        function loadChat(chatIndex) {
+            try {
+                const history = JSON.parse(localStorage.getItem('ollamaChatHistory') || '[]');
+                if (history[chatIndex]) {
+                    currentChat = history[chatIndex].messages;
+                    $('#chat-messages').empty();
+
+                    currentChat.forEach(msg => {
+                        addMessageToChat(msg.role, msg.content);
+                    });
+                }
+            } catch (error) {
+                console.error('Ошибка загрузки чата:', error);
+            }
+        }
+
+        // Тест подключения
+        async function testConnection() {
+            try {
+                const baseUrl = normalizeUrl($('#ollama-url').textbox('getValue'));
+                const url = baseUrl + 'api/tags';
+
+                console.log('Тестирование подключения к:', url);
+
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+
+                console.log('Результат теста:', response.status, response.statusText);
+
+                if (response.ok) {
+                    const data = await response.json();
+                    updateStatus(true);
+
+                    let message = 'Подключение к Ollama успешно установлено';
+                    if (data.models && data.models.length > 0) {
+                        message += `\nДоступно моделей: ${data.models.length}`;
+                        message += `\nПервая модель: ${data.models[0].name}`;
+                    }
+
+                    $.messager.alert('Успех', message, 'info');
+                    return true;
+                } else {
+                    updateStatus(false);
+                    throw new Error(`Сервер вернул ошибку: ${response.status} ${response.statusText}`);
+                }
+            } catch (error) {
+                console.error('Ошибка подключения:', error);
+                updateStatus(false);
+                $.messager.alert('Ошибка',
+                    `Не удалось подключиться к Ollama:\n${error.message}\n\n` +
+                    `Проверьте:\n` +
+                    `1. Запущен ли Ollama сервер\n` +
+                    `2. Правильный ли IP адрес и порт\n` +
+                    `3. Доступность сервера из браузера`,
+                    'error');
+                return false;
+            }
+        }
+
+        // Обновление статуса подключения
+        function updateStatus(isConnected) {
+            const statusBar = $('#status-bar');
+            const indicator = statusBar.find('.status-indicator');
+
+            indicator.removeClass('status-connected status-disconnected');
+
+            if (isConnected) {
+                indicator.addClass('status-connected');
+                statusBar.find('span:last').text('Подключено');
+            } else {
+                indicator.addClass('status-disconnected');
+                statusBar.find('span:last').text('Не подключено');
+            }
+        }
+    </script>
+</body>
+</html>
