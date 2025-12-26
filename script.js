@@ -39,7 +39,6 @@ $(document).ready(function() {
     });
 });
 
-
 // Обновить функцию initElements:
 function initElements() {
     // Инициализация MenuButton в header
@@ -476,6 +475,10 @@ async function sendChatMessage(baseUrl, model, temperature, contextLength, userM
                     const aiMessageDiv = $('#' + aiMessageId);
                     if (aiMessageDiv.length) {
                         aiMessageDiv.text(aiResponse);
+                        // Автоматическое форматирование кода при получении ответа
+                        setTimeout(() => {
+                            formatCodeBlocksInMessage(aiMessageDiv[0]);
+                        }, 50);
                         const chatMessages = $('#chat-messages')[0];
                         if (chatMessages) {
                             chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -484,11 +487,19 @@ async function sendChatMessage(baseUrl, model, temperature, contextLength, userM
                 }
 
                 if (data.done === true) {
+                    // Форматируем финальный блок кода
+                    setTimeout(() => {
+                        const aiMessageDiv = $('#' + aiMessageId);
+                        if (aiMessageDiv.length) {
+                            formatCodeBlocksInMessage(aiMessageDiv[0]);
+                        }
+                    }, 100);
+
                     // Добавляем только user и assistant сообщения в историю (не system)
                     const messagesToSave = messages.filter(msg => msg.role !== 'system');
                     messagesToSave.push({ role: 'assistant', content: aiResponse });
                     currentChat = messagesToSave;
-                    saveCurrentChat();
+                    saveCurrentChat(userMessage);
                 }
             } catch (parseError) {
                 console.warn('Ошибка парсинга строки:', parseError);
@@ -578,6 +589,10 @@ async function sendGenerateMessage(baseUrl, model, temperature, contextLength, u
                     const aiMessageDiv = $('#' + aiMessageId);
                     if (aiMessageDiv.length) {
                         aiMessageDiv.text(aiResponse);
+                        // Автоматическое форматирование кода при получении ответа
+                        setTimeout(() => {
+                            formatCodeBlocksInMessage(aiMessageDiv[0]);
+                        }, 50);
                         const chatMessages = $('#chat-messages')[0];
                         if (chatMessages) {
                             chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -586,11 +601,19 @@ async function sendGenerateMessage(baseUrl, model, temperature, contextLength, u
                 }
 
                 if (data.done === true) {
+                    // Форматируем финальный блок кода
+                    setTimeout(() => {
+                        const aiMessageDiv = $('#' + aiMessageId);
+                        if (aiMessageDiv.length) {
+                            formatCodeBlocksInMessage(aiMessageDiv[0]);
+                        }
+                    }, 100);
+
                     currentChat.push(
                         { role: 'user', content: userMessage },
                         { role: 'assistant', content: aiResponse }
                     );
-                    saveCurrentChat();
+                    saveCurrentChat(userMessage);
                 }
             } catch (parseError) {
                 console.warn('Ошибка парсинга строки:', parseError);
@@ -599,18 +622,109 @@ async function sendGenerateMessage(baseUrl, model, temperature, contextLength, u
     }
 }
 
+// Функция для форматирования блоков кода в сообщении
+function formatCodeBlocksInMessage(element) {
+    const text = $(element).text();
+
+    // Ищем блоки кода обрамленные ```
+    const codeBlockRegex = /```([\s\S]*?)```/g;
+    let match;
+    let newHtml = text;
+    let offset = 0;
+
+    while ((match = codeBlockRegex.exec(text)) !== null) {
+        const fullMatch = match[0];
+        const codeContent = match[1].trim();
+
+        // Определяем язык (если указан)
+        const firstLine = codeContent.split('\n')[0];
+        let language = '';
+        let actualCode = codeContent;
+
+        if (firstLine && /^[a-zA-Z0-9+#-]+$/.test(firstLine) && firstLine.length < 20) {
+            language = firstLine.toLowerCase();
+            actualCode = codeContent.substring(firstLine.length).trim();
+        }
+
+        // Создаем HTML для блока кода
+        const codeBlockHtml = `
+            <div class="code-block-container">
+                <div class="code-block-header">
+                    <span class="code-language">${language || 'code'}</span>
+                    <button class="copy-code-btn" onclick="copyCodeToClipboard(this)">
+                        <span class="copy-text">Копировать</span>
+                        <span class="copied-text" style="display:none;">Скопировано!</span>
+                    </button>
+                </div>
+                <pre><code class="hljs ${language}">${actualCode}</code></pre>
+            </div>
+        `;
+
+        // Заменяем текст на HTML
+        const matchIndex = newHtml.indexOf(fullMatch, offset);
+        if (matchIndex !== -1) {
+            newHtml = newHtml.substring(0, matchIndex) + codeBlockHtml +
+                     newHtml.substring(matchIndex + fullMatch.length);
+            offset = matchIndex + codeBlockHtml.length;
+        }
+    }
+
+    // Если нашли блоки кода, обновляем содержимое
+    if (newHtml !== text) {
+        $(element).html(newHtml);
+
+        // Применяем подсветку синтаксиса
+        $(element).find('pre code').each(function() {
+            hljs.highlightElement(this);
+        });
+    }
+}
+
+// Функция для копирования кода в буфер обмена
+function copyCodeToClipboard(button) {
+    const codeBlock = $(button).closest('.code-block-container').find('code');
+    const codeText = codeBlock.text();
+
+    navigator.clipboard.writeText(codeText).then(() => {
+        // Показываем сообщение об успешном копировании
+        const copyText = $(button).find('.copy-text');
+        const copiedText = $(button).find('.copied-text');
+
+        copyText.hide();
+        copiedText.show();
+
+        // Возвращаем обратно через 2 секунды
+        setTimeout(() => {
+            copyText.show();
+            copiedText.hide();
+        }, 2000);
+    }).catch(err => {
+        console.error('Ошибка копирования:', err);
+        $.messager.alert('Ошибка', 'Не удалось скопировать код', 'error');
+    });
+}
+
 // Добавление сообщения в чат
 function addMessageToChat(role, content) {
     const chatDiv = $('#chat-messages');
     const messageDiv = $('<div></div>')
-        .addClass(role === 'user' ? 'message-user' : 'message-ai')
-        .text(content);
+        .addClass(role === 'user' ? 'message-user' : 'message-ai');
 
-    chatDiv.append(messageDiv);
+    // Если это AI сообщение, добавляем возможность форматирования кода
+    if (role === 'ai') {
+        messageDiv.text(content);
+        // Форматируем блоки кода через небольшой таймаут
+        setTimeout(() => {
+            formatCodeBlocksInMessage(messageDiv[0]);
+        }, 100);
+    } else {
+        messageDiv.text(content);
+    }
 
     const messageId = role + '-message-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
     messageDiv.attr('id', messageId);
 
+    chatDiv.append(messageDiv);
     chatDiv.scrollTop(chatDiv[0].scrollHeight);
 
     return messageDiv[0];
@@ -626,6 +740,7 @@ function clearChat() {
         }
     });
 }
+
 // Сохранение размера split панели чата
 function saveChatSplitSize() {
     try {
@@ -653,26 +768,56 @@ function restoreChatSplitSize() {
     }
 }
 
-
-// Сохранение текущего чата
-function saveCurrentChat() {
+// Сохранение текущего чата (обновленная версия)
+function saveCurrentChat(firstUserMessage) {
     if (currentChat.length > 0) {
         localStorage.setItem('ollamaCurrentChat', JSON.stringify(currentChat));
 
         const history = JSON.parse(localStorage.getItem('ollamaChatHistory') || '[]');
-        const chatTitle = currentChat[0]?.content?.substring(0, 50) + '...' || 'Новый чат';
 
-        history.unshift({
-            title: chatTitle,
-            messages: currentChat,
-            timestamp: new Date().toISOString()
-        });
+        // Создаем заголовок из первых 15 символов первого сообщения пользователя
+        let chatTitle = 'Новый чат';
 
+        // Ищем первое сообщение пользователя
+        const firstUserMsg = firstUserMessage ||
+                            currentChat.find(msg => msg.role === 'user')?.content ||
+                            '';
+
+        if (firstUserMsg) {
+            // Берем первые 15 символов и обрезаем пробелы
+            chatTitle = firstUserMsg.trim().substring(0, 15);
+            if (firstUserMsg.length > 15) {
+                chatTitle += '...';
+            }
+        }
+
+        // Проверяем, нет ли уже такого чата в истории
+        const existingIndex = history.findIndex(chat =>
+            chat.messages.length > 0 &&
+            chat.messages[0]?.content === currentChat[0]?.content
+        );
+
+        if (existingIndex !== -1) {
+            // Обновляем существующий чат
+            history[existingIndex] = {
+                title: chatTitle,
+                messages: currentChat,
+                timestamp: new Date().toISOString()
+            };
+        } else {
+            // Добавляем новый чат в начало
+            history.unshift({
+                title: chatTitle,
+                messages: currentChat,
+                timestamp: new Date().toISOString()
+            });
+        }
+
+        // Сохраняем только последние 20 чатов
         localStorage.setItem('ollamaChatHistory', JSON.stringify(history.slice(0, 20)));
         loadChatHistory();
     }
 }
-
 
 // Обновите функцию loadChat для установки selectedChatId
 function loadChat(chatIndex) {
@@ -684,13 +829,20 @@ function loadChat(chatIndex) {
             $('#chat-messages').empty();
 
             currentChat.forEach(msg => {
-                addMessageToChat(msg.role, msg.content);
+                const element = addMessageToChat(msg.role, msg.content);
+                // Форматируем блоки кода для загруженных сообщений
+                if (msg.role === 'assistant') {
+                    setTimeout(() => {
+                        formatCodeBlocksInMessage(element);
+                    }, 100);
+                }
             });
         }
     } catch (error) {
         console.error('Ошибка загрузки чата:', error);
     }
 }
+
 // Инициализация контекстного меню
 function initContextMenu() {
     $('#history-context-menu').menu({
@@ -721,7 +873,7 @@ function deleteChat() {
                 // Если удаляем текущий чат, очищаем область чата
                 if (currentChat.length > 0) {
                     // Проверяем, не является ли текущий чат удаляемым
-                    const currentChatTitle = currentChat[0]?.content?.substring(0, 50) + '...' || 'Новый чат';
+                    const currentChatTitle = currentChat[0]?.content?.substring(0, 15) + '...' || 'Новый чат';
                     const deletedChatTitle = history[selectedChatId]?.title || '';
 
                     if (currentChatTitle.includes(deletedChatTitle) || deletedChatTitle.includes(currentChatTitle)) {
@@ -781,7 +933,6 @@ function clearAllHistory() {
         }
     });
 }
-
 
 // Инициализация контекстного меню при загрузке истории
 function loadChatHistory() {

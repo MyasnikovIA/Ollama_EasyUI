@@ -185,3 +185,98 @@ body {
 #main-split.easyui-layout {
     height: calc(100vh - 60px) !important; /* 60px - высота header */
 }
+
+/* Стили для блоков кода */
+.code-block-container {
+    margin: 10px 0;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #f8f9fa;
+}
+
+.code-block-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: #e9ecef;
+    border-bottom: 1px solid #ddd;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 12px;
+}
+
+.code-language {
+    font-weight: bold;
+    color: #495057;
+}
+
+.copy-code-btn {
+    background: #6c757d;
+    color: white;
+    border: none;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    font-family: inherit;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    transition: background 0.2s;
+}
+
+.copy-code-btn:hover {
+    background: #5a6268;
+}
+
+.copy-code-btn:active {
+    background: #4e555b;
+}
+
+.copy-code-btn .copied-text {
+    color: #28a745;
+    font-weight: bold;
+}
+
+.code-block-container pre {
+    margin: 0;
+    padding: 12px;
+    overflow-x: auto;
+    background: #f8f9fa;
+}
+
+.code-block-container code {
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 13px;
+    line-height: 1.4;
+    color: #212529;
+}
+
+/* Стили для Highlight.js */
+.hljs-keyword { color: #d73a49; }
+.hljs-string { color: #032f62; }
+.hljs-comment { color: #6a737d; }
+.hljs-function { color: #6f42c1; }
+.hljs-number { color: #005cc5; }
+.hljs-params { color: #24292e; }
+.hljs-title { color: #6f42c1; }
+
+/* Прокрутка для кода */
+pre::-webkit-scrollbar {
+    height: 8px;
+}
+
+pre::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+pre::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+pre::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
