@@ -59,7 +59,7 @@ body {
 }
 
 .chat-input-container {
-    /* Убрали фиксированную высоту, теперь она определяется split панелью */
+    /* Убрали фиксированную высоту, теперь она определяется split панели */
     height: 100%;
     display: flex;
     flex-direction: column;
@@ -86,6 +86,7 @@ body {
     border-left: 4px solid #2196f3;
     max-width: 80%;
     margin-left: auto;
+    word-wrap: break-word;
 }
 
 .message-ai {
@@ -95,6 +96,7 @@ body {
     border-radius: 8px;
     border-left: 4px solid #4caf50;
     max-width: 80%;
+    word-wrap: break-word;
 }
 
 .status-indicator {
@@ -159,6 +161,21 @@ body {
     border: none !important;
 }
 
+/* Tree node text truncation */
+.easyui-tree .tree-node {
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.easyui-tree .tree-title {
+    display: inline-block;
+    max-width: calc(100% - 40px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: middle;
+}
+
 /* Dialog styles */
 .easyui-dialog .dialog-button {
     padding: 10px 20px !important;
@@ -181,6 +198,7 @@ body {
 .easyui-tabs .tabs li a {
     padding: 8px 15px !important;
 }
+
 /* Обновляем высоту основного layout */
 #main-split.easyui-layout {
     height: calc(100vh - 60px) !important; /* 60px - высота header */
@@ -253,6 +271,40 @@ body {
     color: #212529;
 }
 
+/* Стили для кнопки копирования полного ответа */
+.copy-full-response-container {
+    margin-top: 10px;
+    text-align: right;
+}
+
+.copy-full-response-btn {
+    background: #4caf50;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    font-family: inherit;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: background 0.2s;
+}
+
+.copy-full-response-btn:hover {
+    background: #45a049;
+}
+
+.copy-full-response-btn:active {
+    background: #3d8b40;
+}
+
+.copy-full-response-btn .copied-full-response-text {
+    color: #fff;
+    font-weight: bold;
+}
+
 /* Стили для Highlight.js */
 .hljs-keyword { color: #d73a49; }
 .hljs-string { color: #032f62; }
@@ -279,4 +331,13 @@ pre::-webkit-scrollbar-thumb {
 
 pre::-webkit-scrollbar-thumb:hover {
     background: #555;
+}
+
+/* Tree node ellipsis */
+.tree-node-ellipsis {
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+    display: block;
+    width: 100%;
 }
