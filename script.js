@@ -1,11 +1,45 @@
 // Конфигурация по умолчанию
 const DEFAULT_CONFIG = {
     url: 'http://192.168.15.7:11434/',
+    restApiUrl: 'http://127.0.0.1:11435/', // Добавлено по умолчанию
     apiMode: 'chat',
     model: 'llama2',
-    embeddingModel: 'nomic-embed-text', // Добавлено
+    embeddingModel: 'nomic-embed-text',
     temperature: 0.7,
     contextLength: 2048
+};
+
+// Константы с промптами по умолчанию
+const DEFAULT_PROMPTS = {
+    chat: `Ты полезный AI ассистент с доступом к базе знаний.
+
+История предыдущего диалога:
+{history}
+
+Информация из базы знаний для текущего вопроса:
+{context}
+
+Текущий вопрос пользователя: {query}
+
+Учти историю диалога и предоставленную информацию из базы знаний.
+Если в информации из базы знаний есть ответ - используй её.
+Если информации недостаточно - используй свои знания.
+Отвечай точно, информативно и учитывай контекст всего диалога.
+
+Ответ:`,
+
+    generate: `Ты полезный AI ассистент с доступом к базе знаний.
+
+Информация из базы знаний для текущего вопроса:
+{context}
+
+Запрос пользователя: {query}
+
+Используй предоставленную информацию из базы знаний для ответа.
+Если информации недостаточно - используй свои знания.
+Отвечай точно и информативно.
+
+Ответ:`
 };
 
 // Текущий чат
@@ -63,6 +97,7 @@ function initElements() {
 
     // Инициализация текстовых полей
     $('#ollama-url').textbox();
+    $('#rest-api-url').textbox(); // Добавлено
     $('#message-input').textbox({
         multiline: true,
         prompt: 'Введите сообщение...'
@@ -172,12 +207,49 @@ function openSettingsDialog() {
 
 // Открытие диалога промптов
 function openPromptsDialog() {
-    // Загружаем текущие промпты перед открытием диалога
-    const prompts = JSON.parse(localStorage.getItem('ollamaPrompts') || '{}');
-    $('#chat-prompt').textbox('setValue', prompts.chat || '');
-    $('#generate-prompt').textbox('setValue', prompts.generate || '');
+    try {
+        // Загружаем сохраненные промпты
+        const savedPrompts = localStorage.getItem('ollamaPrompts');
+        let prompts = DEFAULT_PROMPTS;
 
-    $('#prompts-dialog').dialog('open');
+        if (savedPrompts) {
+            try {
+                prompts = JSON.parse(savedPrompts);
+            } catch (e) {
+                console.error('Ошибка парсинга сохраненных промптов:', e);
+            }
+        }
+
+        // Устанавливаем значения
+        $('#chat-prompt').textbox('setValue', prompts.chat || DEFAULT_PROMPTS.chat);
+        $('#generate-prompt').textbox('setValue', prompts.generate || DEFAULT_PROMPTS.generate);
+
+        $('#prompts-dialog').dialog('open');
+    } catch (error) {
+        console.error('Ошибка открытия диалога промптов:', error);
+        $.messager.alert('Ошибка', 'Не удалось открыть настройки промптов', 'error');
+    }
+}
+
+// Восстановление промптов по умолчанию
+function restoreDefaultPrompts() {
+    $.messager.confirm('Подтверждение', 'Восстановить промпты по умолчанию?', function(r) {
+        if (r) {
+            try {
+                $('#chat-prompt').textbox('setValue', DEFAULT_PROMPTS.chat);
+                $('#generate-prompt').textbox('setValue', DEFAULT_PROMPTS.generate);
+
+                $.messager.show({
+                    title: 'Успешно',
+                    msg: 'Промпты восстановлены по умолчанию',
+                    timeout: 2000
+                });
+            } catch (error) {
+                console.error('Ошибка восстановления промптов:', error);
+                $.messager.alert('Ошибка', 'Не удалось восстановить промпты', 'error');
+            }
+        }
+    });
 }
 
 // Загрузка доступных моделей
@@ -293,9 +365,10 @@ function saveSettings() {
     try {
         const settings = {
             url: $('#ollama-url').textbox('getValue'),
+            restApiUrl: $('#rest-api-url').textbox('getValue'), // Добавлено
             apiMode: $('#api-mode').combobox('getValue'),
             model: $('#model').combobox('getValue'),
-            embeddingModel: $('#embedding-model').combobox('getValue'), // Добавлено
+            embeddingModel: $('#embedding-model').combobox('getValue'),
             temperature: $('#temperature').numberspinner('getValue'),
             contextLength: $('#context-length').numberspinner('getValue')
         };
@@ -304,7 +377,7 @@ function saveSettings() {
 
         localStorage.setItem('ollamaSettings', JSON.stringify(settings));
         localStorage.setItem('ollamaModel', settings.model);
-        localStorage.setItem('ollamaEmbeddingModel', settings.embeddingModel); // Добавлено
+        localStorage.setItem('ollamaEmbeddingModel', settings.embeddingModel);
 
         $('#settings-dialog').dialog('close');
 
@@ -353,6 +426,7 @@ function loadSettings() {
 
             // Устанавливаем значения
             $('#ollama-url').textbox('setValue', settings.url || DEFAULT_CONFIG.url);
+            $('#rest-api-url').textbox('setValue', settings.restApiUrl || DEFAULT_CONFIG.restApiUrl); // Добавлено
             $('#api-mode').combobox('setValue', settings.apiMode || DEFAULT_CONFIG.apiMode);
             $('#temperature').numberspinner('setValue', settings.temperature || DEFAULT_CONFIG.temperature);
             $('#context-length').numberspinner('setValue', settings.contextLength || DEFAULT_CONFIG.contextLength);
@@ -364,11 +438,11 @@ function loadSettings() {
             if (settings.model) {
                 localStorage.setItem('ollamaModel', settings.model);
             }
-            if (settings.embeddingModel) { // Добавлено
+            if (settings.embeddingModel) {
                 localStorage.setItem('ollamaEmbeddingModel', settings.embeddingModel);
             }
 
-            // Загружаем модели с задержкой, чтобы комбобоксы успели инициализироваться
+            // Загружаем модели с задержкой
             setTimeout(() => {
                 loadModels();
             }, 500);
@@ -376,12 +450,12 @@ function loadSettings() {
         } else {
             // Используем настройки по умолчанию
             $('#ollama-url').textbox('setValue', DEFAULT_CONFIG.url);
+            $('#rest-api-url').textbox('setValue', DEFAULT_CONFIG.restApiUrl); // Добавлено
             $('#api-mode').combobox('setValue', DEFAULT_CONFIG.apiMode);
             $('#temperature').numberspinner('setValue', DEFAULT_CONFIG.temperature);
             $('#context-length').numberspinner('setValue', DEFAULT_CONFIG.contextLength);
             updateTemperatureDisplay();
 
-            // Загружаем модели
             setTimeout(() => {
                 loadModels();
             }, 500);
@@ -390,6 +464,7 @@ function loadSettings() {
         console.error('Ошибка загрузки настроек:', error);
         // Используем настройки по умолчанию при ошибке
         $('#ollama-url').textbox('setValue', DEFAULT_CONFIG.url);
+        $('#rest-api-url').textbox('setValue', DEFAULT_CONFIG.restApiUrl); // Добавлено
         $('#api-mode').combobox('setValue', DEFAULT_CONFIG.apiMode);
         $('#temperature').numberspinner('setValue', DEFAULT_CONFIG.temperature);
         $('#context-length').numberspinner('setValue', DEFAULT_CONFIG.contextLength);
@@ -411,6 +486,73 @@ function loadPrompts() {
     }
 }
 
+// Получение контекста из REST API
+async function getContextFromRestApi(query, mode) {
+    try {
+        const restApiUrl = $('#rest-api-url').textbox('getValue').trim();
+
+        if (!restApiUrl) {
+            return query; // Возвращаем оригинальный запрос если REST API не настроен
+        }
+
+        // Получаем промпт в зависимости от режима
+        const prompts = JSON.parse(localStorage.getItem('ollamaPrompts') || JSON.stringify(DEFAULT_PROMPTS));
+        const systemPrompt = mode === 'chat' ? prompts.chat : prompts.generate;
+
+        // Получаем историю для chat режима
+        let history = '';
+        if (mode === 'chat' && currentChat.length > 0) {
+            history = currentChat.map(msg => {
+                if (msg.role === 'user') {
+                    return `User: ${msg.content}`;
+                } else if (msg.role === 'assistant') {
+                    return `Assistant: ${msg.content}`;
+                }
+                return '';
+            }).filter(msg => msg !== '').join('\n');
+        }
+
+        // Подготавливаем данные для отправки
+        const requestData = {
+            embedding_model: $('#embedding-model').combobox('getValue'),
+            api_mode: mode,
+            system_prompt: systemPrompt,
+            query: query,
+            history: mode === 'chat' ? history : null
+        };
+
+        console.log('Отправка запроса в REST API для контекста:', requestData);
+
+        const response = await fetch(restApiUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify(requestData)
+        });
+
+        if (!response.ok) {
+            throw new Error(`REST API вернул ошибку: ${response.status} ${response.statusText}`);
+        }
+
+        const data = await response.json();
+
+        if (data.context && data.context.trim() !== '') {
+            console.log('Получен контекст из REST API:', data.context.substring(0, 100) + '...');
+            return data.context;
+        } else {
+            console.warn('REST API вернул пустой контекст, используем оригинальный запрос');
+            return query;
+        }
+
+    } catch (error) {
+        console.error('Ошибка получения контекста из REST API:', error);
+        // В случае ошибки возвращаем оригинальный запрос
+        return query;
+    }
+}
+
 // Отправка сообщения
 async function sendMessage() {
     if (isStreaming) {
@@ -429,7 +571,7 @@ async function sendMessage() {
     const baseUrl = normalizeUrl($('#ollama-url').textbox('getValue'));
     const apiMode = $('#api-mode').combobox('getValue');
     const model = $('#model').combobox('getValue');
-    const temperature = $('#temperature').numberspinner('getValue'); // ИЗМЕНЕНО: numberspinner вместо slider
+    const temperature = $('#temperature').numberspinner('getValue');
     const contextLength = $('#context-length').numberspinner('getValue');
 
     if (!model) {
@@ -441,10 +583,24 @@ async function sendMessage() {
     $('#typing-indicator').show();
 
     try {
+        // Проверяем, нужно ли получать контекст из REST API
+        const restApiUrl = $('#rest-api-url').textbox('getValue').trim();
+        let processedMessage = message;
+
+        if (restApiUrl) {
+            // Получаем обогащенный контекст из REST API
+            try {
+                processedMessage = await getContextFromRestApi(message, apiMode);
+                console.log('Используется сообщение с контекстом из REST API');
+            } catch (error) {
+                console.error('Ошибка получения контекста, используем оригинальное сообщение:', error);
+            }
+        }
+
         if (apiMode === 'chat') {
-            await sendChatMessage(baseUrl, model, temperature, contextLength, message);
+            await sendChatMessage(baseUrl, model, temperature, contextLength, processedMessage, message);
         } else {
-            await sendGenerateMessage(baseUrl, model, temperature, contextLength, message);
+            await sendGenerateMessage(baseUrl, model, temperature, contextLength, processedMessage, message);
         }
     } catch (error) {
         console.error('Ошибка при отправке сообщения:', error);
@@ -466,20 +622,47 @@ async function sendMessage() {
 }
 
 // Отправка сообщения через /api/chat
-async function sendChatMessage(baseUrl, model, temperature, contextLength, userMessage) {
+async function sendChatMessage(baseUrl, model, temperature, contextLength, processedMessage, originalMessage) {
     // Получаем промпт для chat
-    const prompts = JSON.parse(localStorage.getItem('ollamaPrompts') || '{}');
+    const prompts = JSON.parse(localStorage.getItem('ollamaPrompts') || JSON.stringify(DEFAULT_PROMPTS));
     const systemPrompt = prompts.chat || '';
+
+    // Заменяем плейсхолдеры в промпте
+    let finalPrompt = systemPrompt;
+
+    // Формируем историю
+    let history = '';
+    if (currentChat.length > 0) {
+        history = currentChat.map(msg => {
+            if (msg.role === 'user') {
+                return `User: ${msg.content}`;
+            } else if (msg.role === 'assistant') {
+                return `Assistant: ${msg.content}`;
+            }
+            return '';
+        }).filter(msg => msg !== '').join('\n');
+    }
+
+    // Заменяем плейсхолдеры
+    finalPrompt = finalPrompt.replace('{history}', history);
+    finalPrompt = finalPrompt.replace('{query}', originalMessage);
+
+    // Если есть контекст из REST API, добавляем его
+    if (processedMessage !== originalMessage) {
+        finalPrompt = finalPrompt.replace('{context}', processedMessage);
+    } else {
+        finalPrompt = finalPrompt.replace('{context}', 'Нет информации из базы знаний.');
+    }
 
     const messages = [...currentChat];
 
     // Добавляем системный промпт если он есть
-    if (systemPrompt && (messages.length === 0 || messages[0].role !== 'system')) {
-        messages.unshift({ role: 'system', content: systemPrompt });
+    if (finalPrompt && (messages.length === 0 || messages[0].role !== 'system')) {
+        messages.unshift({ role: 'system', content: finalPrompt });
     }
 
-    // Добавляем сообщение пользователя
-    messages.push({ role: 'user', content: userMessage });
+    // Добавляем сообщение пользователя (оригинальное сообщение)
+    messages.push({ role: 'user', content: originalMessage });
 
     const requestData = {
         model: model,
@@ -574,7 +757,7 @@ async function sendChatMessage(baseUrl, model, temperature, contextLength, userM
                     const messagesToSave = messages.filter(msg => msg.role !== 'system');
                     messagesToSave.push({ role: 'assistant', content: aiResponse });
                     currentChat = messagesToSave;
-                    saveCurrentChat(userMessage);
+                    saveCurrentChat(originalMessage);
                 }
             } catch (parseError) {
                 console.warn('Ошибка парсинга строки:', parseError);
@@ -584,16 +767,29 @@ async function sendChatMessage(baseUrl, model, temperature, contextLength, userM
 }
 
 // Отправка сообщения через /api/generate
-async function sendGenerateMessage(baseUrl, model, temperature, contextLength, userMessage) {
+async function sendGenerateMessage(baseUrl, model, temperature, contextLength, processedMessage, originalMessage) {
     // Получаем промпт для generate
-    const prompts = JSON.parse(localStorage.getItem('ollamaPrompts') || '{}');
+    const prompts = JSON.parse(localStorage.getItem('ollamaPrompts') || JSON.stringify(DEFAULT_PROMPTS));
     const systemPrompt = prompts.generate || '';
+
+    // Заменяем плейсхолдеры в промпте
+    let finalPrompt = systemPrompt;
+
+    // Заменяем плейсхолдеры
+    finalPrompt = finalPrompt.replace('{query}', originalMessage);
+
+    // Если есть контекст из REST API, добавляем его
+    if (processedMessage !== originalMessage) {
+        finalPrompt = finalPrompt.replace('{context}', processedMessage);
+    } else {
+        finalPrompt = finalPrompt.replace('{context}', 'Нет информации из базы знаний.');
+    }
 
     let prompt = '';
 
     // Добавляем системный промпт если он есть
-    if (systemPrompt) {
-        prompt += systemPrompt + '\n\n';
+    if (finalPrompt) {
+        prompt += finalPrompt + '\n\n';
     }
 
     // Добавляем историю
@@ -606,7 +802,7 @@ async function sendGenerateMessage(baseUrl, model, temperature, contextLength, u
     });
 
     // Добавляем текущее сообщение пользователя
-    prompt += `User: ${userMessage}\nAssistant: `;
+    prompt += `User: ${originalMessage}\nAssistant: `;
 
     const requestData = {
         model: model,
@@ -687,10 +883,10 @@ async function sendGenerateMessage(baseUrl, model, temperature, contextLength, u
                     }, 100);
 
                     currentChat.push(
-                        { role: 'user', content: userMessage },
+                        { role: 'user', content: originalMessage },
                         { role: 'assistant', content: aiResponse }
                     );
-                    saveCurrentChat(userMessage);
+                    saveCurrentChat(originalMessage);
                 }
             } catch (parseError) {
                 console.warn('Ошибка парсинга строки:', parseError);
