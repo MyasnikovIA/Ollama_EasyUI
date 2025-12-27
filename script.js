@@ -42,6 +42,112 @@ const DEFAULT_PROMPTS = {
 Ответ:`
 };
 
+// ------------------------------------------------------------------
+// SemanticChunker Integration
+// ------------------------------------------------------------------
+
+// Функция для инициализации SemanticChunker
+function initSemanticChunker() {
+    const ollamaUrl = $('#ollama-url').textbox('getValue');
+    const embeddingModel = $('#embedding-model').combobox('getValue');
+
+    if (!ollamaUrl || !embeddingModel) {
+        console.warn('SemanticChunker: Не указан Ollama URL или модель для embedding');
+        return null;
+    }
+
+    try {
+        const chunker = new SemanticChunker(
+            ollamaUrl,
+            embeddingModel,
+            0.7, // Порог схожести по умолчанию
+            100  // Задержка между запросами
+        );
+
+        console.log('SemanticChunker инициализирован с параметрами:', {
+            ollamaUrl: ollamaUrl,
+            embeddingModel: embeddingModel
+        });
+
+        return chunker;
+    } catch (error) {
+        console.error('Ошибка инициализации SemanticChunker:', error);
+        return null;
+    }
+}
+
+// Функция для получения эмбеддингов чанков через SemanticChunker
+async function getChunkEmbeddingsWithSemanticChunker(text) {
+    try {
+        // Получаем настройки
+        const ollamaUrl = $('#ollama-url').textbox('getValue');
+        const embeddingModel = $('#embedding-model').combobox('getValue');
+
+        if (!ollamaUrl || !embeddingModel) {
+            console.warn('SemanticChunker: Не указаны необходимые параметры');
+            return null;
+        }
+
+        console.log('🎯 SemanticChunker: Начинаем обработку текста...');
+        console.log('📊 Параметры:', {
+            ollamaUrl: ollamaUrl,
+            embeddingModel: embeddingModel,
+            textLength: text.length
+        });
+
+        // Проверяем, загружена ли библиотека SemanticChunker
+        if (typeof SemanticChunker === 'undefined') {
+            console.error('SemanticChunker: Библиотека не загружена');
+            return null;
+        }
+
+        // Создаем экземпляр SemanticChunker
+        const chunker = new SemanticChunker(ollamaUrl, embeddingModel);
+
+        // Тестируем подключение
+        const isConnected = await chunker.testConnection();
+        if (!isConnected) {
+            console.error('SemanticChunker: Не удалось подключиться к Ollama');
+            return null;
+        }
+
+        console.log('✅ SemanticChunker: Подключение к Ollama успешно');
+
+        // Получаем список моделей для проверки
+        const models = await chunker.getEmbeddingModels();
+        console.log(`📋 SemanticChunker: Доступно ${models.length} моделей`);
+
+        // Проверяем, есть ли выбранная модель в списке
+        const modelExists = models.some(m => m.name === embeddingModel);
+        if (!modelExists) {
+            console.warn(`SemanticChunker: Модель "${embeddingModel}" не найдена. Доступные модели:`,
+                models.map(m => m.name));
+            return null;
+        }
+
+        // Получаем эмбеддинги чанков
+        console.log('🔍 SemanticChunker: Получаем эмбеддинги чанков...');
+        const startTime = Date.now();
+        const embeddings = await chunker.getChunkEmbeddings(text, 1000);
+        const endTime = Date.now();
+
+        console.log(`✅ SemanticChunker: Обработка завершена за ${endTime - startTime}ms`);
+        console.log(`📦 SemanticChunker: Получено ${embeddings.length} чанков`);
+
+        // Логируем результат
+        embeddings.forEach((embedding, index) => {
+            console.log(`   Чанк ${index + 1}: ${embedding.length} измерений, ` +
+                       `первые 3 значения: ${embedding.slice(0, 3).map(v => v.toFixed(4)).join(', ')}...`);
+        });
+
+        return embeddings;
+
+    } catch (error) {
+        console.error('❌ SemanticChunker: Ошибка при обработке:', error);
+        return null;
+    }
+}
+
 // Текущий чат
 let currentChat = [];
 let isStreaming = false;
@@ -487,7 +593,7 @@ function loadPrompts() {
 }
 
 // Получение контекста из REST API
-async function getContextFromRestApi(query, mode) {
+async function getContextFromRestApi(query, mode, chunkEmbeddings) {
     try {
         const restApiUrl = $('#rest-api-url').textbox('getValue').trim();
 
@@ -518,6 +624,7 @@ async function getContextFromRestApi(query, mode) {
             api_mode: mode,
             system_prompt: systemPrompt,
             query: query,
+            chunk: chunkEmbeddings,
             history: mode === 'chat' ? history : null
         };
 
@@ -567,6 +674,40 @@ async function sendMessage() {
     addMessageToChat('user', message);
     $('#message-input').textbox('clear');
 
+    // ============================================
+    // ЛОГИКА SemanticChunker ПЕРЕД ОТПРАВКОЙ ЗАПРОСА
+    // ============================================
+    try {
+        console.log('🎯 SemanticChunker: Обработка запроса перед отправкой');
+
+        const ollamaUrl = $('#ollama-url').textbox('getValue');
+        const embeddingModel = $('#embedding-model').combobox('getValue');
+
+        console.log('📊 Параметры для SemanticChunker:', {
+            ollamaUrl: ollamaUrl,
+            embeddingModel: embeddingModel,
+            messageLength: message.length
+        });
+        // Проверяем наличие библиотеки SemanticChunker
+        if (typeof SemanticChunker === 'undefined') {
+            console.warn('SemanticChunker: Библиотека не загружена. Добавьте <script src="semantic_chunker.js"></script>');
+        } else {
+            // Используем SemanticChunker для обработки запроса
+            const chunkEmbeddings = await getChunkEmbeddingsWithSemanticChunker(message);
+
+            if (chunkEmbeddings) {
+                console.log('✅ SemanticChunker: Обработка завершена');
+                console.log('📦 Полученные эмбеддинги чанков:', chunkEmbeddings);
+            } else {
+                console.log('ℹ️ SemanticChunker: Не удалось получить эмбеддинги чанков');
+            }
+        }
+    } catch (error) {
+        console.error('❌ SemanticChunker: Ошибка при обработке запроса:', error);
+        // Не прерываем основной поток, продолжаем отправку сообщения
+    }
+    // ============================================
+
     // Получение текущих настроек
     const baseUrl = normalizeUrl($('#ollama-url').textbox('getValue'));
     const apiMode = $('#api-mode').combobox('getValue');
@@ -590,7 +731,7 @@ async function sendMessage() {
         if (restApiUrl) {
             // Получаем обогащенный контекст из REST API
             try {
-                processedMessage = await getContextFromRestApi(message, apiMode);
+                processedMessage = await getContextFromRestApi(message, apiMode, chunkEmbeddings);
                 console.log('Используется сообщение с контекстом из REST API');
             } catch (error) {
                 console.error('Ошибка получения контекста, используем оригинальное сообщение:', error);
