@@ -1,4 +1,7 @@
 // semantic_chunker.js
+// ------------------------------------------------------------------
+// <script type="text/javascript" src="semantic_chunker.js"></script>
+// ------------------------------------------------------------------
 
 // ==================== SemanticChunker Browser Library ====================
 /**
@@ -11,7 +14,7 @@
                     const chunker = new SemanticChunker(
                         'http://localhost:11434', // URL Ollama
                         'all-minilm:22m',         // Модель эмбеддинга
-                        0.7                        // Порог схожести
+                        0.7                       // Порог схожести
                     );
 
                     // 1. Получить модели
